@@ -14,6 +14,7 @@ const ThinkingBlob = lazy(() => import('./ui/ThinkingBlob'));
 interface LandingPageV2Props {
   onComplete: (selectedOption: string) => void;
   showBlob?: boolean;
+  onSelectOption?: (selectedOption: string) => void;
 }
 
 const BUTTON_OPTIONS = [
@@ -23,13 +24,12 @@ const BUTTON_OPTIONS = [
   '혼자서 자유롭게',
 ];
 
-export default function LandingPageV2({ onComplete, showBlob = true }: LandingPageV2Props) {
+export default function LandingPageV2({ onComplete, showBlob = true, onSelectOption }: LandingPageV2Props) {
   const [showSori, setShowSori] = useState(false);
   const [moveToBottom, setMoveToBottom] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [showVideo, setShowVideo] = useState(true);
   const [showBlobBackground, setShowBlobBackground] = useState(false);
-  const [blobAnimating, setBlobAnimating] = useState(false);
   const [videoOpacity, setVideoOpacity] = useState(1);
   const [titleOpacity, setTitleOpacity] = useState(1);
   const [showNewText, setShowNewText] = useState(false);
@@ -38,9 +38,14 @@ export default function LandingPageV2({ onComplete, showBlob = true }: LandingPa
   const [buttonOpacity, setButtonOpacity] = useState(0);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [showThinkingBlob, setShowThinkingBlob] = useState(false);
-  const [textAnimationComplete, setTextAnimationComplete] = useState(false);
+  const [thinkingOpacity, setThinkingOpacity] = useState(0);
+  const [showSelectedMessage, setShowSelectedMessage] = useState(false);
+  const [blobAnimating, setBlobAnimating] = useState(false);
   const [questionTextOpacity, setQuestionTextOpacity] = useState(1);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const optionAudioRef = useRef<HTMLAudioElement | null>(null);
+  const arriveTimerRef = useRef<number | null>(null);
+  const completeTimerRef = useRef<number | null>(null);
   // 사전 로드 제거: 필요할 때만 로드 (지연 로드)
   const { playSound } = useSoundManager();
 
@@ -131,8 +136,53 @@ export default function LandingPageV2({ onComplete, showBlob = true }: LandingPa
     return audio;
   }, []);
 
+  // blob transition이 끝난 뒤에 thinking + 메시지 노출 (원하는 순서)
+  const handleBlobArrived = useCallback(() => {
+    setShowThinkingBlob(true);
+    // fade-in
+    window.requestAnimationFrame(() => setThinkingOpacity(1));
+    setShowSelectedMessage(true);
+  }, []);
+
+  const finishToMainWhenReady = useCallback((option: string) => {
+    const finish = () => {
+      setIsTransitioning(true);
+      onComplete(option);
+    };
+
+    const audio = optionAudioRef.current;
+    if (!audio || audio.ended || audio.paused) {
+      finish();
+      return;
+    }
+
+    let done = false;
+    const cleanup = () => {
+      if (done) return;
+      done = true;
+      audio.removeEventListener('ended', onEnded);
+      window.clearTimeout(safetyTimer);
+    };
+    const onEnded = () => {
+      cleanup();
+      finish();
+    };
+    audio.addEventListener('ended', onEnded, { once: true });
+
+    // 안전장치: 너무 오래 끌지 않도록
+    const safetyTimer = window.setTimeout(() => {
+      cleanup();
+      try {
+        audio.pause();
+      } catch {}
+      finish();
+    }, 6000);
+  }, [onComplete]);
+
   // 버튼 선택 시 처리
   const handleButtonClick = useCallback((option: string) => {
+    if (selectedOption) return;
+
     // 3. 버튼 클릭 시 클릭 사운드 재생
     playSound('CLICK_1', {
       onError: () => {
@@ -143,46 +193,53 @@ export default function LandingPageV2({ onComplete, showBlob = true }: LandingPa
     });
     
     setSelectedOption(option);
-    setShowThinkingBlob(true);
+    setShowThinkingBlob(false);
+    setThinkingOpacity(0);
+    setShowSelectedMessage(false);
+    setBlobAnimating(true);
     // 기존 텍스트 fade-out
     setQuestionTextOpacity(0);
+    onSelectOption?.(option);
+
+    // AppFlow 배경 blob이 위로 올라가 "정착"하는 타이밍에 맞춰 thinking + 문구를 노출
+    // (BlobBackground.tsx: 2000ms + 900ms + 200ms ≈ 3100ms)
+    if (arriveTimerRef.current) {
+      window.clearTimeout(arriveTimerRef.current);
+    }
+    arriveTimerRef.current = window.setTimeout(() => {
+      handleBlobArrived();
+    }, 3100);
+
+    // 메시지 노출(도착) 이후 충분히 보여준 뒤 메인으로 전환
+    // 3100ms(도착) + 1500ms(문구 애니 완료) + 3500ms(여유) ≈ 8100ms
+    if (completeTimerRef.current) {
+      window.clearTimeout(completeTimerRef.current);
+    }
+    completeTimerRef.current = window.setTimeout(() => {
+      finishToMainWhenReady(option);
+    }, 8100);
     
     // 선택된 옵션에 해당하는 mp3 파일 재생 (0.8초 지연)
     const mp3File = getMp3FileForOption(option);
     if (mp3File) {
       setTimeout(() => {
-        playMp3File(mp3File);
+        optionAudioRef.current = playMp3File(mp3File);
       }, 800);
     }
-  }, [playSound, playMp3File]);
+  }, [finishToMainWhenReady, handleBlobArrived, onSelectOption, playSound, playMp3File, selectedOption]);
 
-  // 텍스트 애니메이션 완료 시간 계산
   useEffect(() => {
-    if (selectedOption) {
-      const timer = setTimeout(() => {
-        setTextAnimationComplete(true);
-      }, 1500); // SplitText 애니메이션 완료 시간
-
-      return () => clearTimeout(timer);
-    } else {
-      setTextAnimationComplete(false);
-    }
-  }, [selectedOption]);
-
-  // 텍스트 애니메이션 완료 후 최소 5초 대기 (mp3가 5초 이하일 수 있으므로), 그 다음 MainPage로 전환
-  useEffect(() => {
-    if (textAnimationComplete && selectedOption) {
-      // 텍스트가 나타난 시점부터 최소 5초가 지나야 함
-      // SplitText 애니메이션이 1.5초 후 완료되므로, 추가로 3.5초 대기하여 총 5초 보장
-      const timer = setTimeout(() => {
-        setShowThinkingBlob(false);
-        setIsTransitioning(true);
-        onComplete(selectedOption);
-      }, 3500); // 3초에서 3.5초로 증가하여 최소 5초 보장 (1.5초 애니메이션 + 3.5초 대기 = 5초)
-
-      return () => clearTimeout(timer);
-    }
-  }, [textAnimationComplete, selectedOption, onComplete]);
+    return () => {
+      if (arriveTimerRef.current) {
+        window.clearTimeout(arriveTimerRef.current);
+        arriveTimerRef.current = null;
+      }
+      if (completeTimerRef.current) {
+        window.clearTimeout(completeTimerRef.current);
+        completeTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const handleVideoLoadedMetadata = useCallback(() => {
     if (videoRef.current) {
@@ -228,9 +285,20 @@ export default function LandingPageV2({ onComplete, showBlob = true }: LandingPa
     >
       {/* ThinkingBlob - 선택 후에만 표시 */}
       {showThinkingBlob && (
-        <Suspense fallback={null}>
-          <ThinkingBlob isActive={true} />
-        </Suspense>
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 55,
+            opacity: thinkingOpacity,
+            transition: 'opacity 600ms ease-in-out',
+            pointerEvents: 'none',
+          }}
+        >
+          <Suspense fallback={null}>
+            <ThinkingBlob isActive={true} />
+          </Suspense>
+        </div>
       )}
       {/* 초기 비디오 재생 */}
       {showVideo && (
@@ -274,7 +342,10 @@ export default function LandingPageV2({ onComplete, showBlob = true }: LandingPa
       
       {showBlob && showBlobBackground && (
         <Suspense fallback={null}>
-          <BlobBackgroundV2 />
+          <BlobBackgroundV2
+            isAnimating={blobAnimating}
+            onAnimationComplete={handleBlobArrived}
+          />
         </Suspense>
       )}
 
@@ -398,8 +469,8 @@ export default function LandingPageV2({ onComplete, showBlob = true }: LandingPa
             </div>
           )}
 
-          {/* 선택 후 텍스트 (${buttonText} 방문하셨군요. 맞춤형 안내를 생성할게요.) */}
-          {selectedOption && (
+          {/* 선택 후 텍스트 (blob→thinking 전환 이후에만 표시) */}
+          {selectedOption && showSelectedMessage && (
             <div 
               className="text-left"
               style={{

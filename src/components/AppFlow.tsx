@@ -46,16 +46,20 @@ export default function AppFlow() {
     }).catch(() => {
       // 재생 실패해도 조용히 처리
     });
-    // blob 애니메이션은 이미 버튼 클릭 시 시작되었으므로 여기서는 페이지만 전환
+    // MainPage로 전환
     setCurrentPage('main');
   }, [playSound]);
+
+  const handleLandingOptionSelected = useCallback((selectedOption: string) => {
+    setSelectedOnboardingOption(selectedOption);
+    setBlobAnimating(true);
+  }, []);
 
   const handleBlobAnimationStart = () => {
     setBlobAnimating(true);
   };
 
   const handleBlobAnimationComplete = () => {
-    // blob 애니메이션이 완료되면 페이지 전환 (현재는 사용하지 않음)
     // 필요시 구현
   };
 
@@ -309,6 +313,7 @@ export default function AppFlow() {
             <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="text-gray-600">로딩 중...</div></div>}>
               <LandingPageV2 
                 onComplete={handleLandingComplete} 
+                onSelectOption={handleLandingOptionSelected}
                 showBlob={false} 
               />
             </Suspense>
@@ -333,6 +338,7 @@ export default function AppFlow() {
             <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="text-gray-600">로딩 중...</div></div>}>
               <LandingPageV2 
                 onComplete={handleLandingComplete} 
+                onSelectOption={handleLandingOptionSelected}
                 showBlob={false} 
               />
             </Suspense>
