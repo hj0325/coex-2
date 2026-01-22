@@ -50,7 +50,7 @@ export default function BlobBackground({
 
     boostTimeoutRef.current = setTimeout(() => {
       setBoosted(false);
-      setPhase('idle'); // brief settle state visually handled by shader dynamics
+      // keep transitioning (no mid-way reset to idle) so the blob rise is continuous
       settleTimeoutRef.current = setTimeout(() => {
         setPhase('completed');
         // notify the parent shortly after completion

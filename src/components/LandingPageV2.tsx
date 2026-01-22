@@ -46,6 +46,7 @@ export default function LandingPageV2({ onComplete, showBlob = true, onSelectOpt
   const optionAudioRef = useRef<HTMLAudioElement | null>(null);
   const arriveTimerRef = useRef<number | null>(null);
   const completeTimerRef = useRef<number | null>(null);
+  const thinkingFadeTimerRef = useRef<number | null>(null);
   // 사전 로드 제거: 필요할 때만 로드 (지연 로드)
   const { playSound } = useSoundManager();
 
@@ -193,7 +194,8 @@ export default function LandingPageV2({ onComplete, showBlob = true, onSelectOpt
     });
     
     setSelectedOption(option);
-    setShowThinkingBlob(false);
+    // crossfade 준비: thinking을 먼저 깔아두고(투명), blob이 올라오는 동안 서서히 등장시키기
+    setShowThinkingBlob(true);
     setThinkingOpacity(0);
     setShowSelectedMessage(false);
     setBlobAnimating(true);
@@ -201,11 +203,15 @@ export default function LandingPageV2({ onComplete, showBlob = true, onSelectOpt
     setQuestionTextOpacity(0);
     onSelectOption?.(option);
 
-    // AppFlow 배경 blob이 위로 올라가 "정착"하는 타이밍에 맞춰 thinking + 문구를 노출
-    // (BlobBackground.tsx: 2000ms + 900ms + 200ms ≈ 3100ms)
-    if (arriveTimerRef.current) {
-      window.clearTimeout(arriveTimerRef.current);
-    }
+    // blob이 올라오는 동안 thinking을 부드럽게 페이드인 (끊김 방지)
+    // BlobBackground: transitioning 2000ms + settle 900ms + callback 200ms ≈ 3100ms
+    if (thinkingFadeTimerRef.current) window.clearTimeout(thinkingFadeTimerRef.current);
+    thinkingFadeTimerRef.current = window.setTimeout(() => {
+      setThinkingOpacity(1);
+    }, 2400);
+
+    // 문구는 blob이 위에서 "정착"한 직후에 등장
+    if (arriveTimerRef.current) window.clearTimeout(arriveTimerRef.current);
     arriveTimerRef.current = window.setTimeout(() => {
       handleBlobArrived();
     }, 3100);
@@ -233,6 +239,10 @@ export default function LandingPageV2({ onComplete, showBlob = true, onSelectOpt
       if (arriveTimerRef.current) {
         window.clearTimeout(arriveTimerRef.current);
         arriveTimerRef.current = null;
+      }
+      if (thinkingFadeTimerRef.current) {
+        window.clearTimeout(thinkingFadeTimerRef.current);
+        thinkingFadeTimerRef.current = null;
       }
       if (completeTimerRef.current) {
         window.clearTimeout(completeTimerRef.current);
@@ -278,10 +288,8 @@ export default function LandingPageV2({ onComplete, showBlob = true, onSelectOpt
 
   return (
     <div 
-      className={`h-screen flex flex-col safe-area-inset overscroll-none relative transition-opacity duration-500 overflow-hidden bg-transparent ${
-        isTransitioning ? 'opacity-0' : 'opacity-100'
-      }`}
-      style={{ position: 'relative' }}
+      className="h-screen flex flex-col safe-area-inset overscroll-none relative overflow-hidden bg-transparent"
+      style={{ position: 'relative', pointerEvents: isTransitioning ? 'none' : 'auto' }}
     >
       {/* ThinkingBlob - 선택 후에만 표시 */}
       {showThinkingBlob && (

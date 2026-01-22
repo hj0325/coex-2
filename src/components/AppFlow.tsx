@@ -9,6 +9,8 @@ const LandingPage = lazy(() => import('./LandingPage'));
 const LandingPageV2 = lazy(() => import('./LandingPageV2'));
 const OnboardingPage = lazy(() => import('./OnboardingPage'));
 const MainPage = lazy(() => import('./MainPage'));
+// Preload helper to avoid Suspense fallback blank during landing->main transition
+const preloadMainPage = () => import('./MainPage');
 
 type PageType = 'landing' | 'onboarding' | 'main' | 'blocked';
 
@@ -46,13 +48,16 @@ export default function AppFlow() {
     }).catch(() => {
       // 재생 실패해도 조용히 처리
     });
-    // MainPage로 전환
     setCurrentPage('main');
   }, [playSound]);
 
   const handleLandingOptionSelected = useCallback((selectedOption: string) => {
     setSelectedOnboardingOption(selectedOption);
     setBlobAnimating(true);
+    // Preload main chunk early so we don't flash the "로딩 중..." fallback when switching pages.
+    preloadMainPage().catch(() => {
+      // ignore preload errors; fallback will handle
+    });
   }, []);
 
   const handleBlobAnimationStart = () => {
@@ -229,6 +234,7 @@ export default function AppFlow() {
       }
     };
   }, [currentPage]);
+
 
   const renderCurrentPage = () => {
     if (isCheckingAccess) {

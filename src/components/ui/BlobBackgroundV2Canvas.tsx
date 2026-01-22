@@ -82,18 +82,19 @@ function Scene({ boosted, phase, popActive, hideTopBlob = false, hideBottomBlob 
   const topPosition = useMemo<Vector3Tuple>(() => [0, spacing + 0.3, 0], [spacing]);
   const bottomStartPosition = useMemo<Vector3Tuple>(() => [0, -(spacing + 0.3), 0], [spacing]);
   const bottomTargetPosition = useMemo<Vector3Tuple>(
-    () => (phase === 'completed' ? [0, spacing + 0.3, 0] : [0, -(spacing + 0.3), 0]),
+    () => (phase === 'transitioning' || phase === 'completed' ? [0, spacing + 0.3, 0] : [0, -(spacing + 0.3), 0]),
     [phase, spacing]
   );
 
-  const topOpacityTarget = hideTopBlob ? 0 : (phase === 'idle' || phase === 'completed' ? 1 : 0);
+  // During transition, keep the top blob faintly visible to avoid "empty" frames while the bottom blob moves upward.
+  const topOpacityTarget = hideTopBlob ? 0 : (phase === 'transitioning' ? 0.35 : 1);
   const topScaleTarget = customTopScale !== undefined 
     ? customTopScale 
     : (phase === 'transitioning' || phase === 'completed' ? 1.12 : 1);
-  const bottomScaleTarget = customBottomScale !== undefined 
-    ? customBottomScale 
-    : (popActive ? 2.0 : phase === 'completed' ? 1.04 : 1);
-  const bottomPositionLerp = phase === 'completed' ? 0.12 : 0.04;
+  const bottomScaleTarget = customBottomScale !== undefined
+    ? customBottomScale
+    : (popActive ? 2.0 : phase === 'transitioning' ? 1.12 : phase === 'completed' ? 1.04 : 1);
+  const bottomPositionLerp = phase === 'transitioning' ? 0.075 : phase === 'completed' ? 0.12 : 0.04;
   const bottomScaleLerp = popActive ? 0.2 : 0.14;
   const bottomVariant = phase === 'transitioning' ? 'water' : 'default';
 
